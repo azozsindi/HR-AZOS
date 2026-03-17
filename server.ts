@@ -63,28 +63,29 @@ async function startServer() {
     });
   });
 
-  // API Routes
-  app.use("/api", (req, res, next) => {
+  // API Router
+  const apiRouter = express.Router();
+
+  apiRouter.use((req, res, next) => {
     console.log(`[API] ${req.method} ${req.path}`);
     next();
   });
 
-  app.get(["/api/health", "/api/health/"], (req, res) => {
+  apiRouter.get("/health", (req, res) => {
     res.json({ status: "ok", firebase: !!db });
   });
 
-  app.get(["/api/test", "/api/test/"], (req, res) => {
+  apiRouter.get("/test", (req, res) => {
     res.json({ message: "API is working" });
   });
 
-  app.post(["/api/admin/create-user", "/api/admin/create-user/"], async (req, res) => {
+  apiRouter.post("/admin/create-user", async (req, res) => {
     if (!db) {
       return res.status(500).json({ error: "Database not initialized" });
     }
     const { email, password, username, role, companyData } = req.body;
     
     try {
-      // Generate a unique ID
       const usersCol = collection(db, "users");
       const userRef = doc(usersCol);
       const uid = userRef.id;
@@ -113,7 +114,7 @@ async function startServer() {
     }
   });
 
-  app.delete(["/api/admin/delete-user/:uid", "/api/admin/delete-user/:uid/"], async (req, res) => {
+  apiRouter.delete("/admin/delete-user/:uid", async (req, res) => {
     const { uid } = req.params;
     try {
       const userRef = doc(db, "users", uid);
@@ -129,8 +130,10 @@ async function startServer() {
     }
   });
 
+  app.use("/api", apiRouter);
+
   // API 404 Handler
-  app.use("/api/*", (req, res) => {
+  apiRouter.use("*", (req, res) => {
     console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
     res.status(404).json({ error: `API Route ${req.originalUrl} not found` });
   });
