@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Company, UserAccount } from "../types";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, LogOut, Plus, Building2, Trash2 } from "lucide-react";
 
 interface LoginPageProps {
   company: Company;
@@ -9,8 +9,8 @@ interface LoginPageProps {
 }
 
 import { auth, db } from "../lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc, collection, query, where, getDocs, setDoc } from "firebase/firestore";
 import { DEFAULT_COMPANY } from "../data";
 
 export const LoginPage: React.FC<LoginPageProps> = ({ company, accounts, onLogin }) => {
@@ -35,49 +35,94 @@ export const LoginPage: React.FC<LoginPageProps> = ({ company, accounts, onLogin
     setIsLoading(true);
     
     try {
-      // Special check for Admin
-      if (username === "azozsindi" && password === "24682468") {
-        onLogin({
-          id: "admin-id",
-          username: "azozsindi",
-          password: "24682468",
-          role: "superadmin",
-          companyData: company
-        });
-        return;
+      // 1. Convert username to email
+      let email = username;
+      if (!username.includes("@")) {
+        if (username.toLowerCase() === "azozsindi") {
+          email = "azozsindi23@gmail.com";
+        } else {
+          email = `${username}@hr-system.com`;
+        }
       }
 
-      // Standard login for companies
-      // First try to find by username in Firestore
-      const q = query(collection(db, "users"), where("username", "==", username));
-      const querySnapshot = await getDocs(q);
+      // 2. Sign in with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
       
-      if (!querySnapshot.empty) {
-        const userData = querySnapshot.docs[0].data() as UserAccount;
-        if (userData.password === password) {
-          onLogin({ ...userData, id: querySnapshot.docs[0].id });
-          return;
+      // 3. Fetch user profile from Firestore to confirm role and company
+      const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as UserAccount;
+        onLogin({ ...userData, id: firebaseUser.uid });
+      } else {
+        // Special case for superadmin if doc doesn't exist yet
+        if (email.toLowerCase() === "azozsindi23@gmail.com") {
+          const adminData: UserAccount = {
+            id: firebaseUser.uid,
+            username: "azozsindi",
+            password: "",
+            role: "superadmin",
+            companyData: DEFAULT_COMPANY
+          };
+          await setDoc(doc(db, "users", firebaseUser.uid), adminData);
+          onLogin(adminData);
+        } else {
+          throw new Error("User profile not found");
         }
       }
-
-      // Fallback to Firebase Auth if email is used
-      if (username.includes("@")) {
-        const userCredential = await signInWithEmailAndPassword(auth, username, password);
-        const firebaseUser = userCredential.user;
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as UserAccount;
-          onLogin({ ...userData, id: firebaseUser.uid });
-          return;
-        }
-      }
-
-      setError("اسم المستخدم أو كلمة المرور غير صحيحة");
     } catch (err: any) {
       console.error("Login error", err);
       setError("اسم المستخدم أو كلمة المرور غير صحيحة");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const [initLoading, setInitLoading] = useState(false);
+
+  const handleInitializeAdmin = async () => {
+    setInitLoading(true);
+    setError("");
+    try {
+      const email = "azozsindi23@gmail.com";
+      const pass = "24682468";
+      
+      let uid = "";
+      try {
+        // Try to create
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+        uid = userCredential.user.uid;
+      } catch (authErr: any) {
+        if (authErr.code === "auth/email-already-in-use") {
+          // If exists, try to sign in to get the UID and update the doc
+          try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+            uid = userCredential.user.uid;
+          } catch (loginErr: any) {
+            setError("الحساب موجود بكلمة مرور مختلفة. يرجى استخدام كلمة المرور الصحيحة أو إعادة تعيينها من Firebase.");
+            setInitLoading(false);
+            return;
+          }
+        } else {
+          throw authErr;
+        }
+      }
+
+      // Ensure the Firestore document exists with the correct role
+      await setDoc(doc(db, "users", uid), {
+        id: uid,
+        username: "azozsindi",
+        password: "", 
+        role: "superadmin",
+        companyData: DEFAULT_COMPANY
+      }, { merge: true });
+
+      alert("تم تهيئة حساب السوبر أدمن بنجاح! يمكنك الآن تسجيل الدخول.");
+    } catch (err: any) {
+      console.error("Initialization error", err);
+      setError("فشل التهيئة: " + err.message);
+    } finally {
+      setInitLoading(false);
     }
   };
 
@@ -161,7 +206,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ company, accounts, onLogin
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-50 text-center">
+          <div className="mt-8 pt-6 border-t border-gray-50 text-center space-y-4">
+            <button 
+              type="button"
+              onClick={handleInitializeAdmin}
+              disabled={initLoading}
+              className="text-[10px] font-black text-gray-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
+            >
+              {initLoading ? "جاري التهيئة..." : "⚙️ تهيئة حساب السوبر أدمن (للمرة الأولى)"}
+            </button>
             <p className="text-[10px] text-gray-400 leading-relaxed">
               هذه المنصة مخصصة للموظفين المصرح لهم فقط.<br/>
               في حال واجهت مشكلة في الدخول، يرجى التواصل مع مدير النظام.

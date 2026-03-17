@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { UserAccount, Company } from "../types";
 import { DEFAULT_COMPANY } from "../data/industries";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, LogOut, Plus, Building2, Trash2 } from "lucide-react";
+import { auth, db } from "../lib/firebase";
+import { createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, deleteDoc } from "firebase/firestore";
+import { initializeApp, getApp, deleteApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import firebaseConfig from "../../firebase-applet-config.json";
 
 interface SuperAdminDashboardProps {
   accounts: UserAccount[];
@@ -56,42 +62,37 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     }
 
     setIsLoading(true);
+    let secondaryApp;
     try {
       const email = `${newUsername}@hr-system.com`;
-      const apiUrl = "/api/admin/create-user";
-      console.log(`Calling API: ${apiUrl} with data:`, { email, username: newUsername });
       
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          password: newPassword,
-          username: newUsername,
-          role: "company",
-          companyData: {
-            ...DEFAULT_COMPANY,
-            name: companyName,
-          }
-        }),
+      // 1. Create a secondary Firebase app to create the user in Auth without signing out current user
+      const secondaryAppName = `SecondaryApp_${Date.now()}`;
+      secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, newPassword);
+      const uid = userCredential.user.uid;
+      
+      // 2. Create user document in main Firestore
+      await setDoc(doc(db, "users", uid), {
+        id: uid,
+        username: newUsername,
+        password: newPassword, // Stored for reference as requested
+        role: "company",
+        companyId: uid,
+        email: email
       });
 
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const err = await response.json();
-          throw new Error(err.error || "Failed to create account");
-        } else {
-          const text = await response.text();
-          console.error("Non-JSON error response:", text);
-          throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
-      }
+      // 3. Create company document
+      await setDoc(doc(db, "companies", uid), {
+        ...DEFAULT_COMPANY,
+        id: uid,
+        name: companyName,
+      });
 
-      const result = await response.json();
-      
       onAddAccount({
-        id: result.uid,
+        id: uid,
         username: newUsername,
         password: newPassword,
         role: "company",
@@ -99,15 +100,21 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
           ...DEFAULT_COMPANY,
           name: companyName,
         },
-        companyId: result.uid
+        companyId: uid
       });
 
       setNewUsername("");
       setNewPassword("");
       setCompanyName("");
       alert("تم إنشاء الحساب بنجاح");
+      
+      // Clean up secondary app
+      await signOut(secondaryAuth);
+      await deleteApp(secondaryApp);
     } catch (err: any) {
+      console.error("Error creating account:", err);
       setError("خطأ: " + err.message);
+      if (secondaryApp) await deleteApp(secondaryApp);
     } finally {
       setIsLoading(false);
     }
@@ -117,20 +124,8 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     if (!confirm("هل أنت متأكد من حذف هذا الحساب؟")) return;
     
     try {
-      const response = await fetch(`/api/admin/delete-user/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          const err = await response.json();
-          throw new Error(err.error || "Failed to delete account");
-        } else {
-          throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
-      }
-
+      await deleteDoc(doc(db, "users", id));
+      await deleteDoc(doc(db, "companies", id));
       onDeleteAccount(id);
     } catch (err: any) {
       alert("خطأ: " + err.message);

@@ -38,58 +38,37 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isAdmin() {
-      return isAuthenticated() &&
-        (
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin') ||
-          (request.auth.token.email.matches("(?i)azozsindi23@gmail.com") && request.auth.token.email_verified == true)
-        );
-    }
-
-    function isCompanyUser(companyId) {
+    function isSuperAdmin() {
       return isAuthenticated() && 
-        (
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId) || 
-          isAdmin()
-        );
+        (("email" in request.auth.token && request.auth.token.email.matches("(?i)azozsindi23@gmail.com")) || 
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'));
+    }
+
+    function isSameCompany(companyId) {
+      return isAuthenticated() && (getUserData().companyId == companyId || isSuperAdmin());
     }
 
     // Rules
     
     match /users/{userId} {
-      // Allow users to read their own profile or admins to read any profile
-      allow read: if isOwner(userId) || isAdmin();
-      
-      // Allow users to create their own profile (for bootstrap)
-      // Stricter check: only azozsindi23@gmail.com can create a superadmin role
-      allow create: if isOwner(userId) && 
-        (request.resource.data.role == 'superadmin' ? request.auth.token.email == "azozsindi23@gmail.com" : true);
-      
-      // Allow users to update their own profile, but not change their role unless admin
-      allow update: if isOwner(userId) && 
-        (request.resource.data.role == resource.data.role || isAdmin());
-        
-      // Only admins can delete users
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow delete: if isSuperAdmin();
     }
 
     match /companies/{companyId} {
-      allow read: if isCompanyUser(companyId);
-      // Write is handled by Admin SDK on server, but we can allow superadmin for safety
-      allow write: if isAdmin();
+      allow read: if isSameCompany(companyId);
+      allow write: if isSuperAdmin();
     }
 
     match /alerts/{alertId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isAdmin());
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read, write: if isAuthenticated() && (request.resource.data.companyId == getUserData().companyId || resource.data.companyId == getUserData().companyId || isSuperAdmin());
     }
   }
 }
