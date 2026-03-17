@@ -2,7 +2,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import admin from "firebase-admin";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, doc, setDoc, deleteDoc } from "firebase/firestore";
 import dotenv from "dotenv";
 import fs from "fs";
 
@@ -10,42 +11,23 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Manual Firebase Config
-const firebaseConfig = {
-  projectId: "hr-azoos",
-};
-
-// Initialize Firebase Admin
-if (admin.apps.length === 0) {
-  try {
-    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId;
-    
-    if (process.env.FIREBASE_PRIVATE_KEY) {
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY
-        .replace(/\\n/g, '\n')
-        .replace(/\\r/g, '\r')
-        .replace(/^"(.*)"$/, '$1')
-        .trim();
-
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: projectId,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: privateKey,
-        }),
-      });
-      console.log("Firebase Admin initialized with Service Account");
-    } else {
-      // Try initializing with just project ID (works in environments with ADC like Cloud Run)
-      admin.initializeApp({
-        projectId: projectId,
-      });
-      console.log("Firebase Admin initialized with Project ID (ADC)");
-    }
-  } catch (error) {
-    console.error("Failed to initialize Firebase Admin:", error);
+// Load Firebase config safely
+let firebaseConfig: any = {};
+const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+try {
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    console.log("Loaded Firebase config for project:", firebaseConfig.projectId);
+  } else {
+    console.warn("firebase-applet-config.json not found at:", configPath);
   }
+} catch (err) {
+  console.error("Failed to load firebase-applet-config.json:", err);
 }
+
+// Initialize Firebase Client SDK (works on server too and uses API Key)
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
 
 async function startServer() {
   const app = express();
@@ -58,30 +40,31 @@ async function startServer() {
     const { email, password, username, role, companyData } = req.body;
     
     try {
-      const userRecord = await admin.auth().createUser({
-        email,
-        password,
-        displayName: username,
-      });
+      // Generate a unique ID
+      const usersCol = collection(db, "users");
+      const userRef = doc(usersCol);
+      const uid = userRef.id;
 
-      // User created in Auth, now SuperAdminDashboard will handle Firestore part
-      // or we can do it here
-      const db = admin.firestore();
-      await db.collection("users").doc(userRecord.uid).set({
-        id: userRecord.uid,
+      await setDoc(userRef, {
+        id: uid,
         username,
+        password, 
         role,
-        companyId: userRecord.uid, // Use UID as company ID for simplicity
+        companyId: uid,
         email
       });
 
       if (companyData) {
-        await db.collection("companies").doc(userRecord.uid).set(companyData);
+        const companyRef = doc(db, "companies", uid);
+        await setDoc(companyRef, {
+          ...companyData,
+          id: uid
+        });
       }
 
-      res.json({ success: true, uid: userRecord.uid });
+      res.json({ success: true, uid });
     } catch (error: any) {
-      console.error("Error creating user:", error);
+      console.error("Error creating user in Firestore:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -89,13 +72,15 @@ async function startServer() {
   app.delete("/api/admin/delete-user/:uid", async (req, res) => {
     const { uid } = req.params;
     try {
-      await admin.auth().deleteUser(uid);
-      const db = admin.firestore();
-      await db.collection("users").doc(uid).delete();
-      await db.collection("companies").doc(uid).delete();
+      const userRef = doc(db, "users", uid);
+      const companyRef = doc(db, "companies", uid);
+      
+      await deleteDoc(userRef);
+      await deleteDoc(companyRef);
+      
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Error deleting user:", error);
+      console.error("Error deleting user from Firestore:", error);
       res.status(500).json({ error: error.message });
     }
   });
