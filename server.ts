@@ -47,6 +47,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Ping route - very top
+  app.get("/ping", (req, res) => res.send("pong"));
+
   app.use(express.json());
 
   // Global logger
@@ -55,16 +58,19 @@ async function startServer() {
     next();
   });
 
-  // API Routes - Using Admin SDK for Firestore operations
-  app.get("/api/health", (req, res) => {
+  // API Router
+  const apiRouter = express.Router();
+
+  apiRouter.get("/health", (req, res) => {
+    console.log("Health check requested");
     res.json({ status: "ok", firebase: !!adminDb });
   });
 
-  app.get("/api/test", (req, res) => {
+  apiRouter.get("/test", (req, res) => {
     res.json({ message: "API is working" });
   });
 
-  app.post("/api/admin/create-user", async (req, res) => {
+  apiRouter.post("/admin/create-user", async (req, res) => {
     console.log("Creating user with data:", req.body);
     if (!adminDb) {
       return res.status(500).json({ error: "Admin Database not initialized" });
@@ -100,7 +106,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/delete-user/:uid", async (req, res) => {
+  apiRouter.delete("/admin/delete-user/:uid", async (req, res) => {
     const { uid } = req.params;
     if (!adminDb) {
       return res.status(500).json({ error: "Admin Database not initialized" });
@@ -115,6 +121,8 @@ async function startServer() {
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.use("/api", apiRouter);
 
   // Debug route
   app.get("/debug", (req, res) => {
