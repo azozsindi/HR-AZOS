@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { UserAccount, Company } from "../types";
 import { DEFAULT_COMPANY } from "../data/industries";
 import { Eye, EyeOff } from "lucide-react";
@@ -20,6 +20,24 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   const [error, setError] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [apiStatus, setApiStatus] = useState<string>("checking...");
+
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch("/api/health");
+        if (res.ok) {
+          const data = await res.json();
+          setApiStatus(`OK (Firebase: ${data.firebase ? "Connected" : "Disconnected"})`);
+        } else {
+          setApiStatus(`Error: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        setApiStatus(`Failed to reach API: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    checkHealth();
+  }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +56,10 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     setIsLoading(true);
     try {
       const email = `${newUsername}@hr-system.com`;
-      const response = await fetch("/api/admin/create-user", {
+      const apiUrl = "/api/admin/create-user";
+      console.log(`Calling API: ${apiUrl} with data:`, { email, username: newUsername });
+      
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -120,6 +141,9 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
         <div>
           <h1 className="text-xl font-black text-gray-800">لوحة تحكم السوبر أدمن 👑</h1>
           <p className="text-xs text-gray-400 mt-1">أهلاً بك azozsindi، يمكنك إدارة حسابات الشركات من هنا</p>
+          <p className="text-[10px] mt-1">
+            حالة النظام: <span className={apiStatus.startsWith("OK") ? "text-green-600" : "text-red-600"}>{apiStatus}</span>
+          </p>
         </div>
         <button onClick={onLogout} className="bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-red-100 transition-all">تسجيل الخروج</button>
       </header>

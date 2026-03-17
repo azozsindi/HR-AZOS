@@ -29,13 +29,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use(express.json());
+
   // Global logger
   app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
   });
-
-  app.use(express.json());
 
   // Initialize Firebase inside startServer to catch errors
   let db: any;
@@ -50,36 +50,17 @@ async function startServer() {
     console.error("Firebase initialization failed:", error);
   }
 
-  // Debug route
-  app.get("/debug", (req, res) => {
-    res.json({
-      status: "running",
-      env: process.env.NODE_ENV,
-      firebase: !!db,
-      config: {
-        projectId: firebaseConfig.projectId,
-        databaseId: firebaseConfig.firestoreDatabaseId
-      }
-    });
-  });
-
-  // API Router
-  const apiRouter = express.Router();
-
-  apiRouter.use((req, res, next) => {
-    console.log(`[API] ${req.method} ${req.path}`);
-    next();
-  });
-
-  apiRouter.get("/health", (req, res) => {
+  // API Routes - Using direct app.post/get for maximum reliability
+  app.get("/api/health", (req, res) => {
     res.json({ status: "ok", firebase: !!db });
   });
 
-  apiRouter.get("/test", (req, res) => {
+  app.get("/api/test", (req, res) => {
     res.json({ message: "API is working" });
   });
 
-  apiRouter.post("/admin/create-user", async (req, res) => {
+  app.post("/api/admin/create-user", async (req, res) => {
+    console.log("Creating user with data:", req.body);
     if (!db) {
       return res.status(500).json({ error: "Database not initialized" });
     }
@@ -107,6 +88,7 @@ async function startServer() {
         });
       }
 
+      console.log("User created successfully:", uid);
       res.json({ success: true, uid });
     } catch (error: any) {
       console.error("Error creating user in Firestore:", error);
@@ -114,7 +96,7 @@ async function startServer() {
     }
   });
 
-  apiRouter.delete("/admin/delete-user/:uid", async (req, res) => {
+  app.delete("/api/admin/delete-user/:uid", async (req, res) => {
     const { uid } = req.params;
     try {
       const userRef = doc(db, "users", uid);
@@ -130,12 +112,17 @@ async function startServer() {
     }
   });
 
-  app.use("/api", apiRouter);
-
-  // API 404 Handler
-  apiRouter.use("*", (req, res) => {
-    console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
-    res.status(404).json({ error: `API Route ${req.originalUrl} not found` });
+  // Debug route
+  app.get("/debug", (req, res) => {
+    res.json({
+      status: "running",
+      env: process.env.NODE_ENV,
+      firebase: !!db,
+      config: {
+        projectId: firebaseConfig.projectId,
+        databaseId: firebaseConfig.firestoreDatabaseId
+      }
+    });
   });
 
   // Vite middleware for development
