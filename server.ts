@@ -2,8 +2,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { initializeApp as initializeAdminApp, cert } from "firebase-admin/app";
+import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 import dotenv from "dotenv";
 import fs from "fs";
 
@@ -25,6 +25,24 @@ try {
   console.error("Failed to load firebase-applet-config.json:", err);
 }
 
+// Initialize Firebase Admin SDK
+let adminDb: any;
+try {
+  if (firebaseConfig.projectId) {
+    // In this environment, we can often initialize with just the project ID
+    // if running on Cloud Run or with default credentials.
+    initializeAdminApp({
+      projectId: firebaseConfig.projectId,
+    });
+    adminDb = getAdminFirestore();
+    console.log("Firebase Admin SDK initialized successfully");
+  } else {
+    console.warn("Firebase Admin initialization skipped: No projectId found");
+  }
+} catch (error) {
+  console.error("Firebase Admin initialization failed:", error);
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -37,22 +55,9 @@ async function startServer() {
     next();
   });
 
-  // Initialize Firebase inside startServer to catch errors
-  let db: any;
-  try {
-    if (!firebaseConfig.projectId) {
-      throw new Error("Firebase Project ID is missing in config");
-    }
-    const firebaseApp = initializeApp(firebaseConfig);
-    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
-    console.log("Firebase Client SDK initialized successfully");
-  } catch (error) {
-    console.error("Firebase initialization failed:", error);
-  }
-
-  // API Routes - Using direct app.post/get for maximum reliability
+  // API Routes - Using Admin SDK for Firestore operations
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", firebase: !!db });
+    res.json({ status: "ok", firebase: !!adminDb });
   });
 
   app.get("/api/test", (req, res) => {
@@ -61,17 +66,16 @@ async function startServer() {
 
   app.post("/api/admin/create-user", async (req, res) => {
     console.log("Creating user with data:", req.body);
-    if (!db) {
-      return res.status(500).json({ error: "Database not initialized" });
+    if (!adminDb) {
+      return res.status(500).json({ error: "Admin Database not initialized" });
     }
     const { email, password, username, role, companyData } = req.body;
     
     try {
-      const usersCol = collection(db, "users");
-      const userRef = doc(usersCol);
+      const userRef = adminDb.collection("users").doc();
       const uid = userRef.id;
 
-      await setDoc(userRef, {
+      await userRef.set({
         id: uid,
         username,
         password, 
@@ -81,33 +85,33 @@ async function startServer() {
       });
 
       if (companyData) {
-        const companyRef = doc(db, "companies", uid);
-        await setDoc(companyRef, {
+        const companyRef = adminDb.collection("companies").doc(uid);
+        await companyRef.set({
           ...companyData,
           id: uid
         });
       }
 
-      console.log("User created successfully:", uid);
+      console.log("User created successfully via Admin SDK:", uid);
       res.json({ success: true, uid });
     } catch (error: any) {
-      console.error("Error creating user in Firestore:", error);
+      console.error("Error creating user in Firestore (Admin):", error);
       res.status(500).json({ error: error.message });
     }
   });
 
   app.delete("/api/admin/delete-user/:uid", async (req, res) => {
     const { uid } = req.params;
+    if (!adminDb) {
+      return res.status(500).json({ error: "Admin Database not initialized" });
+    }
     try {
-      const userRef = doc(db, "users", uid);
-      const companyRef = doc(db, "companies", uid);
-      
-      await deleteDoc(userRef);
-      await deleteDoc(companyRef);
+      await adminDb.collection("users").doc(uid).delete();
+      await adminDb.collection("companies").doc(uid).delete();
       
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Error deleting user from Firestore:", error);
+      console.error("Error deleting user from Firestore (Admin):", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -117,10 +121,9 @@ async function startServer() {
     res.json({
       status: "running",
       env: process.env.NODE_ENV,
-      firebase: !!db,
+      firebaseAdmin: !!adminDb,
       config: {
-        projectId: firebaseConfig.projectId,
-        databaseId: firebaseConfig.firestoreDatabaseId
+        projectId: firebaseConfig.projectId
       }
     });
   });

@@ -110,6 +110,11 @@ export default function HRSystem() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const accs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserAccount));
         setAccounts(accs);
+      }, (error) => {
+        console.error("Firestore snapshot error (users):", error);
+        if (error.code === "permission-denied") {
+          console.warn("Permission denied for users query. This might be temporary during login.");
+        }
       });
       return () => unsubscribe();
     }

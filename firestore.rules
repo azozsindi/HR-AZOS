@@ -44,29 +44,52 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin' ||
-          (request.auth.token.email == "azozsindi23@gmail.com" && request.auth.token.email_verified == true));
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin') ||
+          (request.auth.token.email.matches("(?i)azozsindi23@gmail.com") && request.auth.token.email_verified == true)
+        );
     }
 
     function isCompanyUser(companyId) {
       return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId || isAdmin());
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId) || 
+          isAdmin()
+        );
     }
 
     // Rules
     
     match /users/{userId} {
+      // Allow users to read their own profile or admins to read any profile
       allow read: if isOwner(userId) || isAdmin();
-      allow write: if true; // Allow server-side creation (unauthenticated in this context)
+      
+      // Allow users to create their own profile (for bootstrap)
+      // Stricter check: only azozsindi23@gmail.com can create a superadmin role
+      allow create: if isOwner(userId) && 
+        (request.resource.data.role == 'superadmin' ? request.auth.token.email == "azozsindi23@gmail.com" : true);
+      
+      // Allow users to update their own profile, but not change their role unless admin
+      allow update: if isOwner(userId) && 
+        (request.resource.data.role == resource.data.role || isAdmin());
+        
+      // Only admins can delete users
+      allow delete: if isAdmin();
     }
 
     match /companies/{companyId} {
       allow read: if isCompanyUser(companyId);
-      allow write: if true; // Allow server-side creation
+      // Write is handled by Admin SDK on server, but we can allow superadmin for safety
+      allow write: if isAdmin();
     }
 
     match /alerts/{alertId} {
-      allow read, write: if isAuthenticated() && (request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId || isAdmin());
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
   }
 }

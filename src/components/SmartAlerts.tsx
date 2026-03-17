@@ -36,6 +36,8 @@ export const SmartAlerts: React.FC<SmartAlertsProps> = ({ company, onBack }) => 
       setDocuments(docs);
       // Also update localStorage for the badge count in App.tsx
       localStorage.setItem("hr-docs-alerts", JSON.stringify(docs));
+    }, (error) => {
+      console.error("Firestore snapshot error (alerts):", error);
     });
 
     return () => unsubscribe();
