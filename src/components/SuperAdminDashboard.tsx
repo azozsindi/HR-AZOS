@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { UserAccount, Company } from "../types";
 import { DEFAULT_COMPANY } from "../data/industries";
+import { Eye, EyeOff } from "lucide-react";
 
 interface SuperAdminDashboardProps {
   accounts: UserAccount[];
@@ -14,6 +15,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
 }) => {
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState("");
 
@@ -52,8 +54,15 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to create account");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          throw new Error(err.error || "Failed to create account");
+        } else {
+          const text = await response.text();
+          console.error("Non-JSON error response:", text);
+          throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
       }
 
       const result = await response.json();
@@ -90,7 +99,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to delete account");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          throw new Error(err.error || "Failed to delete account");
+        } else {
+          throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
       }
 
       onDeleteAccount(id);
@@ -136,11 +151,22 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             </div>
             <div>
               <label className="block text-[10px] font-black text-gray-400 uppercase mb-1.5 mr-1">كلمة المرور</label>
-              <input 
-                type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-indigo-500 transition-all outline-none text-xs font-bold"
-              />
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  value={newPassword} 
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-50 bg-gray-50 focus:bg-white focus:border-indigo-500 transition-all outline-none text-xs font-bold"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
 
             {error && <div className="text-[10px] font-bold text-red-500 bg-red-50 p-2 rounded-lg">{error}</div>}

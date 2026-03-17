@@ -25,18 +25,43 @@ try {
   console.error("Failed to load firebase-applet-config.json:", err);
 }
 
-// Initialize Firebase Client SDK (works on server too and uses API Key)
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
-
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
 
+  // Initialize Firebase inside startServer to catch errors
+  let db: any;
+  try {
+    if (!firebaseConfig.projectId) {
+      throw new Error("Firebase Project ID is missing in config");
+    }
+    const firebaseApp = initializeApp(firebaseConfig);
+    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
+    console.log("Firebase Client SDK initialized successfully");
+  } catch (error) {
+    console.error("Firebase initialization failed:", error);
+  }
+
   // API Routes
+  app.use("/api", (req, res, next) => {
+    console.log(`[API] ${req.method} ${req.path}`);
+    next();
+  });
+
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", firebase: !!db });
+  });
+
+  app.get("/api/test", (req, res) => {
+    res.json({ message: "API is working" });
+  });
+
   app.post("/api/admin/create-user", async (req, res) => {
+    if (!db) {
+      return res.status(500).json({ error: "Database not initialized" });
+    }
     const { email, password, username, role, companyData } = req.body;
     
     try {
@@ -100,8 +125,12 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server is strictly listening on http://0.0.0.0:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
   });
 }
 
-startServer();
+console.log("Starting server process...");
+startServer().catch(err => {
+  console.error("FATAL: Server failed to start:", err);
+});
