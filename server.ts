@@ -29,6 +29,12 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Global logger
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+
   app.use(express.json());
 
   // Initialize Firebase inside startServer to catch errors
@@ -44,21 +50,34 @@ async function startServer() {
     console.error("Firebase initialization failed:", error);
   }
 
+  // Debug route
+  app.get("/debug", (req, res) => {
+    res.json({
+      status: "running",
+      env: process.env.NODE_ENV,
+      firebase: !!db,
+      config: {
+        projectId: firebaseConfig.projectId,
+        databaseId: firebaseConfig.firestoreDatabaseId
+      }
+    });
+  });
+
   // API Routes
   app.use("/api", (req, res, next) => {
     console.log(`[API] ${req.method} ${req.path}`);
     next();
   });
 
-  app.get("/api/health", (req, res) => {
+  app.get(["/api/health", "/api/health/"], (req, res) => {
     res.json({ status: "ok", firebase: !!db });
   });
 
-  app.get("/api/test", (req, res) => {
+  app.get(["/api/test", "/api/test/"], (req, res) => {
     res.json({ message: "API is working" });
   });
 
-  app.post("/api/admin/create-user", async (req, res) => {
+  app.post(["/api/admin/create-user", "/api/admin/create-user/"], async (req, res) => {
     if (!db) {
       return res.status(500).json({ error: "Database not initialized" });
     }
@@ -94,7 +113,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/delete-user/:uid", async (req, res) => {
+  app.delete(["/api/admin/delete-user/:uid", "/api/admin/delete-user/:uid/"], async (req, res) => {
     const { uid } = req.params;
     try {
       const userRef = doc(db, "users", uid);
@@ -110,6 +129,12 @@ async function startServer() {
     }
   });
 
+  // API 404 Handler
+  app.use("/api/*", (req, res) => {
+    console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ error: `API Route ${req.originalUrl} not found` });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -123,6 +148,12 @@ async function startServer() {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
   }
+
+  // Final Catch-all 404 for everything
+  app.use((req, res) => {
+    console.error(`[FINAL 404] ${req.method} ${req.url}`);
+    res.status(404).send(`Cannot ${req.method} ${req.url} - No route matched in Express`);
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Server is strictly listening on http://0.0.0.0:${PORT}`);
