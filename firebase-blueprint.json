@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "User Account",
+      "description": "Represents a user in the HR system, either a superadmin or a company admin.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The user's display name." },
+        "role": { "type": "string", "enum": ["superadmin", "company"], "description": "The user's role." },
+        "companyId": { "type": "string", "description": "The ID of the company this user belongs to." },
+        "companyData": { "$ref": "Company", "description": "Initial company data for the user." }
+      },
+      "required": ["username", "role"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Represents a company's settings and data.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "industry": { "type": "string" },
+        "primaryColor": { "type": "string" },
+        "logo": { "type": "string" },
+        "employees": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "A document expiry alert.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "UserAccount", "description": "User profiles." },
+    "/companies/{companyId}": { "schema": "Company", "description": "Company settings and employee data." },
+    "/alerts/{alertId}": { "schema": "Alert", "description": "Document expiry alerts." }
+  }
+}

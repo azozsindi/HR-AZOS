@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - username: string
+    //   - role: string ("superadmin", "company")
+    //   - companyId: string (optional)
+    //   - companyData: map (optional)
+    //
+    // Collection: companies
+    // Document ID: companyId
+    // Fields:
+    //   - name: string
+    //   - industry: string
+    //   - primaryColor: string
+    //   - employees: list of maps
+    //   ... other company settings
+    //
+    // Collection: alerts
+    // Document ID: randomId
+    // Fields:
+    //   - userId: string
+    //   - name: string
+    //   - expiryDate: string
+    //   ... other alert fields
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin' ||
+          (request.auth.token.email == "azozsindi23@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isCompanyUser(companyId) {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId || isAdmin());
+    }
+
+    // Rules
+    
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    match /companies/{companyId} {
+      allow read, write: if isCompanyUser(companyId);
+    }
+
+    match /alerts/{alertId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId || isAdmin());
+    }
+  }
+}
