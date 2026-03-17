@@ -7,9 +7,9 @@ interface LoginPageProps {
   onLogin: (account: UserAccount) => void;
 }
 
-import { auth, db, googleProvider } from "../lib/firebase";
-import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { DEFAULT_COMPANY } from "../data";
 
 export const LoginPage: React.FC<LoginPageProps> = ({ company, accounts, onLogin }) => {
@@ -33,77 +33,47 @@ export const LoginPage: React.FC<LoginPageProps> = ({ company, accounts, onLogin
     setIsLoading(true);
     
     try {
-      // Map username to email if needed
-      const email = username.includes("@") ? username : `${username}@hr-system.com`;
-      
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
+      // Special check for Admin
+      if (username === "azozsindi" && password === "24682468") {
+        onLogin({
+          id: "admin-id",
+          username: "azozsindi",
+          password: "24682468",
+          role: "superadmin",
+          companyData: company
+        });
+        return;
+      }
 
-      // Fetch user data from Firestore
-      const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data() as UserAccount;
-        onLogin({ ...userData, id: firebaseUser.uid });
-      } else {
-        // Bootstrap superadmin if it's the first time
-        if (email.toLowerCase() === "azozsindi23@gmail.com") {
-          onLogin({
-            id: firebaseUser.uid,
-            username: "azoos",
-            password: "",
-            role: "superadmin",
-            companyData: company
-          });
-        } else {
-          setError("لم يتم العثور على بيانات المستخدم في قاعدة البيانات");
+      // Standard login for companies
+      // First try to find by username in Firestore
+      const q = query(collection(db, "users"), where("username", "==", username));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const userData = querySnapshot.docs[0].data() as UserAccount;
+        if (userData.password === password) {
+          onLogin({ ...userData, id: querySnapshot.docs[0].id });
+          return;
         }
       }
+
+      // Fallback to Firebase Auth if email is used
+      if (username.includes("@")) {
+        const userCredential = await signInWithEmailAndPassword(auth, username, password);
+        const firebaseUser = userCredential.user;
+        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data() as UserAccount;
+          onLogin({ ...userData, id: firebaseUser.uid });
+          return;
+        }
+      }
+
+      setError("اسم المستخدم أو كلمة المرور غير صحيحة");
     } catch (err: any) {
       console.error("Login error", err);
-      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
-        setError("اسم المستخدم أو كلمة المرور غير صحيحة");
-      } else {
-        setError("حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة لاحقاً");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setError("");
-    setIsLoading(true);
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const firebaseUser = result.user;
-
-      // Check if user exists in Firestore
-      const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data() as UserAccount;
-        onLogin({ ...userData, id: firebaseUser.uid });
-      } else {
-        // If it's the superadmin email, bootstrap it
-        if (firebaseUser.email?.toLowerCase() === "azozsindi23@gmail.com") {
-          const adminData: UserAccount = {
-            id: firebaseUser.uid,
-            username: firebaseUser.displayName || "admin",
-            password: "",
-            role: "superadmin",
-            companyData: DEFAULT_COMPANY
-          };
-          await setDoc(doc(db, "users", firebaseUser.uid), adminData);
-          onLogin(adminData);
-        } else {
-          // For new Google users, we might want to allow them to create a company profile
-          // But for now, let's just show an error that they need to be invited
-          setError("عذراً، يجب أن يتم دعوتك من قبل مدير النظام أولاً.");
-          await auth.signOut();
-        }
-      }
-    } catch (err: any) {
-      console.error("Google Login error", err);
-      setError("حدث خطأ أثناء تسجيل الدخول عبر جوجل.");
+      setError("اسم المستخدم أو كلمة المرور غير صحيحة");
     } finally {
       setIsLoading(false);
     }
@@ -179,23 +149,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ company, accounts, onLogin
               ) : (
                 <span>دخول للمنصة ←</span>
               )}
-            </button>
-
-            <div className="relative flex items-center justify-center py-2">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-100"></div>
-              </div>
-              <span className="relative px-4 bg-white text-[10px] font-bold text-gray-400 uppercase tracking-widest">أو</span>
-            </div>
-
-            <button 
-              type="button"
-              disabled={isLoading}
-              onClick={handleGoogleLogin}
-              className="w-full py-3.5 rounded-2xl bg-white border-2 border-gray-100 text-gray-700 font-bold text-sm transition-all hover:bg-gray-50 active:scale-[0.98] flex items-center justify-center gap-3 shadow-sm"
-            >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-              <span>الدخول بواسطة جوجل</span>
             </button>
           </form>
 

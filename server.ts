@@ -4,28 +4,44 @@ import path from "path";
 import { fileURLToPath } from "url";
 import admin from "firebase-admin";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Initialize Firebase Admin
-if (process.env.VITE_FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
-  try {
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '\r')
-      .replace(/^"(.*)"$/, '$1')
-      .trim();
+// Manual Firebase Config
+const firebaseConfig = {
+  projectId: "hr-azoos",
+};
 
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: privateKey,
-      }),
-    });
-    console.log("Firebase Admin initialized successfully");
+// Initialize Firebase Admin
+if (admin.apps.length === 0) {
+  try {
+    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId;
+    
+    if (process.env.FIREBASE_PRIVATE_KEY) {
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/^"(.*)"$/, '$1')
+        .trim();
+
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: projectId,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: privateKey,
+        }),
+      });
+      console.log("Firebase Admin initialized with Service Account");
+    } else {
+      // Try initializing with just project ID (works in environments with ADC like Cloud Run)
+      admin.initializeApp({
+        projectId: projectId,
+      });
+      console.log("Firebase Admin initialized with Project ID (ADC)");
+    }
   } catch (error) {
     console.error("Failed to initialize Firebase Admin:", error);
   }

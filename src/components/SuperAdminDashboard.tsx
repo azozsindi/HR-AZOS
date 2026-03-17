@@ -104,7 +104,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
       <header className="max-w-5xl mx-auto flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <div>
           <h1 className="text-xl font-black text-gray-800">لوحة تحكم السوبر أدمن 👑</h1>
-          <p className="text-xs text-gray-400 mt-1">أهلاً بك azoos، يمكنك إدارة حسابات الشركات من هنا</p>
+          <p className="text-xs text-gray-400 mt-1">أهلاً بك azozsindi، يمكنك إدارة حسابات الشركات من هنا</p>
         </div>
         <button onClick={onLogout} className="bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold text-xs hover:bg-red-100 transition-all">تسجيل الخروج</button>
       </header>
