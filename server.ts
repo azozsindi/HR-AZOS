@@ -52,26 +52,38 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Custom header to verify server
+  app.use((req, res, next) => {
+    res.setHeader("X-HR-Server", "Active");
+    next();
+  });
+
   // Global logger
   app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
   });
 
-  // API Router
-  const apiRouter = express.Router();
-
-  apiRouter.get("/health", (req, res) => {
-    console.log("Health check requested");
-    res.json({ status: "ok", firebase: !!adminDb });
+  // API Routes - DIRECTLY ON APP AND AT THE TOP
+  console.log("Registering API routes...");
+  
+  app.get("/api/health", (req, res) => {
+    console.log(`API: Health check hit - URL: ${req.url}, OriginalURL: ${req.originalUrl}`);
+    res.json({ 
+      status: "ok", 
+      firebase: !!adminDb,
+      url: req.url,
+      originalUrl: req.originalUrl,
+      method: req.method
+    });
   });
 
-  apiRouter.get("/test", (req, res) => {
+  app.get("/api/test", (req, res) => {
     res.json({ message: "API is working" });
   });
 
-  apiRouter.post("/admin/create-user", async (req, res) => {
-    console.log("Creating user with data:", req.body);
+  app.post("/api/admin/create-user", async (req, res) => {
+    console.log("API: Create user hit with data:", req.body);
     if (!adminDb) {
       return res.status(500).json({ error: "Admin Database not initialized" });
     }
@@ -106,8 +118,9 @@ async function startServer() {
     }
   });
 
-  apiRouter.delete("/admin/delete-user/:uid", async (req, res) => {
+  app.delete("/api/admin/delete-user/:uid", async (req, res) => {
     const { uid } = req.params;
+    console.log(`API: Delete user hit for UID: ${uid}`);
     if (!adminDb) {
       return res.status(500).json({ error: "Admin Database not initialized" });
     }
@@ -121,8 +134,6 @@ async function startServer() {
       res.status(500).json({ error: error.message });
     }
   });
-
-  app.use("/api", apiRouter);
 
   // Debug route
   app.get("/debug", (req, res) => {

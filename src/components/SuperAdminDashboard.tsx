@@ -25,12 +25,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch("/api/health");
+        const res = await fetch(`/api/health?t=${Date.now()}`);
+        const serverHeader = res.headers.get("X-HR-Server");
+        
         if (res.ok) {
           const data = await res.json();
-          setApiStatus(`OK (Firebase: ${data.firebase ? "Connected" : "Disconnected"})`);
+          setApiStatus(`OK (Firebase: ${data.firebase ? "Connected" : "Disconnected"}) (Server: ${serverHeader || "Unknown"})`);
         } else {
-          setApiStatus(`Error: ${res.status} ${res.statusText}`);
+          setApiStatus(`Error: ${res.status} ${res.statusText} (Server: ${serverHeader || "Unknown"})`);
         }
       } catch (err) {
         setApiStatus(`Failed to reach API: ${err instanceof Error ? err.message : String(err)}`);
